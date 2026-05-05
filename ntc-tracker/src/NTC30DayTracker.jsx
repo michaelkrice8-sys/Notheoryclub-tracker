@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const DAYS = 30;
 const TASKS = [
@@ -6,50 +6,36 @@ const TASKS = [
   { id: "strumming", label: "Strumming", icon: "🥁" },
   { id: "song", label: "Song Practice", icon: "🎵" },
 ];
-
 const STORAGE_KEY = "ntc-30day-tracker-v1";
 
-function getDayEmoji(pct, isStreakDay) {
-  if (pct === 0) return null;
-  if (pct === 100) return "⭐";
-  if (isStreakDay) return "🔥";
-  return null;
+function encodeData(data) {
+  const bits = [];
+  data.forEach(day => TASKS.forEach(t => bits.push(day[t.id] ? 1 : 0)));
+  while (bits.length % 8 !== 0) bits.push(0);
+  const bytes = [];
+  for (let i = 0; i < bits.length; i += 8) {
+    let byte = 0;
+    for (let j = 0; j < 8; j++) byte = (byte << 1) | (bits[i + j] || 0);
+    bytes.push(byte);
+  }
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function calcStreak(data) {
-  let streak = 0;
-  for (let i = 0; i < DAYS; i++) {
-    const day = data[i];
-    const done = TASKS.filter(t => day[t.id]).length;
-    if (done > 0) streak++;
-    else if (i > 0) break; // only count from day 1 forward consecutive
-  }
-  // Actually calc current streak from last completed day backward
-  let s = 0;
-  for (let i = DAYS - 1; i >= 0; i--) {
-    const day = data[i];
-    const done = TASKS.filter(t => day[t.id]).length;
-    if (done > 0) s++;
-    else break;
-  }
-  return s;
-}
-
-function calcCurrentStreak(data) {
-  // find the last day that has any checks, then count backward from there
-  let lastActive = -1;
-  for (let i = DAYS - 1; i >= 0; i--) {
-    const done = TASKS.filter(t => data[i][t.id]).length;
-    if (done > 0) { lastActive = i; break; }
-  }
-  if (lastActive === -1) return 0;
-  let streak = 0;
-  for (let i = lastActive; i >= 0; i--) {
-    const done = TASKS.filter(t => data[i][t.id]).length;
-    if (done > 0) streak++;
-    else break;
-  }
-  return streak;
+function decodeData(str) {
+  try {
+    const binary = atob(str.replace(/-/g, "+").replace(/_/g, "/"));
+    const bits = [];
+    for (let i = 0; i < binary.length; i++) {
+      const byte = binary.charCodeAt(i);
+      for (let j = 7; j >= 0; j--) bits.push((byte >> j) & 1);
+    }
+    const data = Array.from({ length: DAYS }, () =>
+      Object.fromEntries(TASKS.map(t => [t.id, false]))
+    );
+    let idx = 0;
+    data.forEach(day => TASKS.forEach(t => { day[t.id] = bits[idx++] === 1; }));
+    return data;
+  } catch (_) { return null; }
 }
 
 function initData() {
@@ -58,24 +44,111 @@ function initData() {
   );
 }
 
+function calcCurrentStreak(data) {
+  let lastActive = -1;
+  for (let i = DAYS - 1; i >= 0; i--) {
+    if (TASKS.some(t => data[i][t.id])) { lastActive = i; break; }
+  }
+  if (lastActive === -1) return 0;
+  let streak = 0;
+  for (let i = lastActive; i >= 0; i--) {
+    if (TASKS.some(t => data[i][t.id])) streak++;
+    else break;
+  }
+  return streak;
+}
+
+// ── CONFETTI ────────────────────────────────────────────────────────────────
+function useConfetti() {
+  const canvasRef = useRef(null);
+  const animRef = useRef(null);
+
+  function launch() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const ctx = canvas.getContext("2d");
+    const colors = ["#FFD60A", "#F77F00", "#ffffff", "#FF6B6B", "#4ECDC4", "#FFD60A", "#F77F00"];
+    const pieces = Array.from({ length: 160 }, () => ({
+      x: Math.random() * canvas.width,
+      y: -20 - Math.random() * 100,
+      w: 8 + Math.random() * 8,
+      h: 4 + Math.random() * 4,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      rotation: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.2,
+      vx: (Math.random() - 0.5) * 4,
+      vy: 2 + Math.random() * 4,
+      opacity: 1,
+    }));
+
+    let frame = 0;
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      pieces.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.05;
+        p.rotation += p.rotSpeed;
+        if (frame > 120) p.opacity = Math.max(0, p.opacity - 0.012);
+        ctx.save();
+        ctx.globalAlpha = p.opacity;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      });
+      frame++;
+      if (frame < 220) animRef.current = requestAnimationFrame(draw);
+      else ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    draw();
+  }
+
+  return { canvasRef, launch };
+}
+
 export default function App() {
   const [data, setData] = useState(initData);
   const [loaded, setLoaded] = useState(false);
   const [celebrating, setCelebrating] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const { canvasRef, launch } = useConfetti();
 
-  // Load from localStorage
+  // Load
   useEffect(() => {
     try {
+      const params = new URLSearchParams(window.location.search);
+      const d = params.get("d");
+      if (d) {
+        const decoded = decodeData(d);
+        if (decoded) { setData(decoded); setLoaded(true); return; }
+      }
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) setData(JSON.parse(saved));
     } catch (_) {}
     setLoaded(true);
   }, []);
 
-  // Save to localStorage
+  // Auto-save
   useEffect(() => {
     if (!loaded) return;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (_) {}
+  }, [data, loaded]);
+
+  // Check for 30-day completion
+  useEffect(() => {
+    if (!loaded) return;
+    const allDaysActive = data.every(day => TASKS.some(t => day[t.id]));
+    if (allDaysActive) {
+      setTimeout(() => {
+        setShowModal(true);
+        launch();
+      }, 600);
+    }
   }, [data, loaded]);
 
   function toggle(dayIdx, taskId) {
@@ -83,7 +156,6 @@ export default function App() {
       const next = prev.map((d, i) =>
         i === dayIdx ? { ...d, [taskId]: !d[taskId] } : d
       );
-      // Check if day just hit 100%
       const dayDone = TASKS.filter(t => next[dayIdx][t.id]).length;
       if (dayDone === TASKS.length) setCelebrating(dayIdx);
       return next;
@@ -94,6 +166,7 @@ export default function App() {
   function resetAll() {
     if (confirm("Reset all 30 days? This can't be undone.")) {
       setData(initData());
+      window.history.replaceState(null, "", window.location.pathname);
     }
   }
 
@@ -107,26 +180,117 @@ export default function App() {
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&display=swap');
-
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #080808; color: #fff; font-family: 'DM Sans', sans-serif; min-height: 100vh; }
 
-        body {
-          background: #080808;
+        .confetti-canvas {
+          position: fixed;
+          top: 0; left: 0;
+          width: 100%; height: 100%;
+          pointer-events: none;
+          z-index: 9999;
+        }
+
+        /* ── MODAL ── */
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.85);
+          z-index: 1000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+          animation: fadeIn 0.4s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .modal {
+          background: #111;
+          border: 1px solid #2a2a2a;
+          border-radius: 24px;
+          padding: 40px 32px;
+          max-width: 420px;
+          width: 100%;
+          text-align: center;
+          position: relative;
+          animation: slideUp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        .modal::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 3px;
+          background: linear-gradient(90deg, #FFD60A, #F77F00);
+          border-radius: 24px 24px 0 0;
+        }
+
+        .modal-emoji { font-size: 64px; margin-bottom: 16px; display: block; animation: bounce 1s ease infinite alternate; }
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-8px); } }
+
+        .modal-title {
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 36px;
+          letter-spacing: 1px;
+          margin-bottom: 8px;
+          background: linear-gradient(135deg, #FFD60A, #F77F00);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          line-height: 1.1;
+        }
+
+        .modal-subtitle {
+          font-size: 16px;
           color: #fff;
-          font-family: 'DM Sans', sans-serif;
-          min-height: 100vh;
+          font-weight: 600;
+          margin-bottom: 16px;
         }
 
-        .app {
-          max-width: 680px;
-          margin: 0 auto;
-          padding: 24px 16px 60px;
-        }
-
-        /* ── HEADER ── */
-        .header {
+        .modal-body {
+          font-size: 14px;
+          color: #999;
+          line-height: 1.7;
           margin-bottom: 28px;
         }
+        .modal-body strong { color: #ccc; }
+
+        .modal-close {
+          background: #ffffff;
+          border: none;
+          border-radius: 12px;
+          padding: 14px 32px;
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 20px;
+          letter-spacing: 1px;
+          color: #000;
+          cursor: pointer;
+          width: 100%;
+          transition: transform 0.15s, box-shadow 0.15s;
+          box-shadow: 0 6px 28px rgba(255,255,255,0.25), 0 2px 8px rgba(0,0,0,0.4);
+          display: block;
+          text-decoration: none;
+          text-shadow: none;
+        }
+        .modal-close:hover { transform: translateY(-2px); box-shadow: 0 10px 36px rgba(255,255,255,0.35), 0 4px 12px rgba(0,0,0,0.4); }
+
+        .modal-screenshot-hint {
+          background: #1a1a1a;
+          border: 1px dashed #333;
+          border-radius: 10px;
+          padding: 12px 16px;
+          font-size: 13px;
+          color: #FFD60A;
+          font-weight: 600;
+          margin-bottom: 16px;
+          letter-spacing: 0.3px;
+        }
+
+        /* ── APP ── */
+        .app { max-width: 680px; margin: 0 auto; padding: 24px 16px 60px; }
+        .header { margin-bottom: 28px; }
         .header-top {
           display: flex;
           align-items: flex-start;
@@ -134,16 +298,8 @@ export default function App() {
           gap: 12px;
           margin-bottom: 8px;
         }
-        .title {
-          font-family: 'Bebas Neue', sans-serif;
-          font-size: clamp(36px, 8vw, 52px);
-          line-height: 1;
-          letter-spacing: 1px;
-        }
-        .title-ntc {
-          color: #ffffff;
-          display: block;
-        }
+        .title { font-family: 'Bebas Neue', sans-serif; font-size: clamp(36px, 8vw, 52px); line-height: 1; letter-spacing: 1px; }
+        .title-ntc { color: #fff; display: block; }
         .title-streak {
           display: block;
           background: linear-gradient(135deg, #FFD60A 0%, #F77F00 100%);
@@ -151,19 +307,13 @@ export default function App() {
           -webkit-text-fill-color: transparent;
           background-clip: text;
         }
-        .subtitle {
-          font-size: 14px;
-          color: #888;
-          margin-top: 6px;
-          line-height: 1.5;
-        }
-        .subtitle strong {
-          color: #ccc;
-        }
+        .subtitle { font-size: 14px; color: #888; margin-top: 6px; line-height: 1.5; }
+        .subtitle strong { color: #ccc; }
+
         .reset-btn {
           background: transparent;
           border: 1px solid #2a2a2a;
-          color: #555;
+          color: #444;
           font-size: 11px;
           font-family: 'DM Sans', sans-serif;
           padding: 6px 10px;
@@ -176,13 +326,7 @@ export default function App() {
         }
         .reset-btn:hover { border-color: #F77F00; color: #F77F00; }
 
-        /* ── STATS ROW ── */
-        .stats-row {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 10px;
-          margin-bottom: 28px;
-        }
+        .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 28px; }
         .stat-card {
           background: #111;
           border: 1px solid #1e1e1e;
@@ -209,42 +353,13 @@ export default function App() {
           line-height: 1;
           margin-bottom: 4px;
         }
-        .stat-label {
-          font-size: 10px;
-          color: #555;
-          text-transform: uppercase;
-          letter-spacing: 0.8px;
-          font-weight: 600;
-        }
+        .stat-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }
 
-        /* ── PROGRESS BAR ── */
-        .progress-wrap {
-          margin-bottom: 28px;
-        }
-        .progress-top {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 8px;
-        }
-        .progress-label {
-          font-size: 11px;
-          color: #555;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          font-weight: 600;
-        }
-        .progress-pct {
-          font-family: 'Bebas Neue', sans-serif;
-          font-size: 16px;
-          color: #FFD60A;
-        }
-        .progress-track {
-          height: 6px;
-          background: #1a1a1a;
-          border-radius: 99px;
-          overflow: hidden;
-        }
+        .progress-wrap { margin-bottom: 28px; }
+        .progress-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .progress-label { font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+        .progress-pct { font-family: 'Bebas Neue', sans-serif; font-size: 16px; color: #FFD60A; }
+        .progress-track { height: 6px; background: #1a1a1a; border-radius: 99px; overflow: hidden; }
         .progress-fill {
           height: 100%;
           background: linear-gradient(90deg, #FFD60A, #F77F00);
@@ -252,13 +367,7 @@ export default function App() {
           transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        /* ── TABLE ── */
-        .table-wrap {
-          border: 1px solid #1e1e1e;
-          border-radius: 16px;
-          overflow: hidden;
-        }
-
+        .table-wrap { border: 1px solid #1e1e1e; border-radius: 16px; overflow: hidden; }
         .table-header {
           display: grid;
           grid-template-columns: 80px 1fr 1fr 1fr 60px;
@@ -277,8 +386,6 @@ export default function App() {
           align-items: center;
           justify-content: center;
           gap: 4px;
-          line-height: 1.3;
-          text-align: center;
         }
         .th:first-child { justify-content: flex-start; }
         .th:last-child { justify-content: flex-end; }
@@ -298,48 +405,27 @@ export default function App() {
         }
         .day-row:last-child { border-bottom: none; }
         .day-row:hover { background: #0f0f0f; }
-        .day-row.complete {
-          background: linear-gradient(90deg, rgba(247,127,0,0.06), transparent);
-        }
-        .day-row.celebrating {
-          animation: celebrate 0.6s ease;
-        }
+        .day-row.complete { background: linear-gradient(90deg, rgba(247,127,0,0.06), transparent); }
+        .day-row.celebrating { animation: celebrate 0.6s ease; }
         @keyframes celebrate {
           0% { background: transparent; }
-          30% { background: rgba(255, 214, 10, 0.12); }
+          30% { background: rgba(255,214,10,0.12); }
           100% { background: linear-gradient(90deg, rgba(247,127,0,0.06), transparent); }
         }
 
-        .day-label {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .day-num {
-          font-family: 'Bebas Neue', sans-serif;
-          font-size: 18px;
-          color: #333;
-          min-width: 42px;
-        }
+        .day-label { display: flex; align-items: center; gap: 8px; }
+        .day-num { font-family: 'Bebas Neue', sans-serif; font-size: 18px; color: #333; min-width: 42px; }
         .day-num.active {
           background: linear-gradient(135deg, #FFD60A, #F77F00);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
         }
-        .day-streak-icon {
-          font-size: 14px;
-          line-height: 1;
-        }
+        .day-streak-icon { font-size: 14px; line-height: 1; }
 
-        /* checkboxes */
-        .check-cell {
-          display: flex;
-          justify-content: center;
-        }
+        .check-cell { display: flex; justify-content: center; }
         .check-box {
-          width: 26px;
-          height: 26px;
+          width: 26px; height: 26px;
           border: 2px solid #252525;
           border-radius: 6px;
           cursor: pointer;
@@ -350,83 +436,71 @@ export default function App() {
           background: transparent;
           flex-shrink: 0;
         }
-        .check-box:hover {
-          border-color: #FFD60A;
-          background: rgba(255,214,10,0.05);
-        }
-        .check-box.checked {
-          background: linear-gradient(135deg, #FFD60A, #F77F00);
-          border-color: transparent;
-        }
+        .check-box:hover { border-color: #FFD60A; background: rgba(255,214,10,0.05); }
+        .check-box.checked { background: linear-gradient(135deg, #FFD60A, #F77F00); border-color: transparent; }
         .check-box.checked::after {
           content: '';
-          width: 10px;
-          height: 6px;
+          width: 10px; height: 6px;
           border-left: 2px solid #000;
           border-bottom: 2px solid #000;
           transform: rotate(-45deg) translate(1px, -1px);
           display: block;
         }
 
-        /* pct cell */
-        .pct-cell {
-          display: flex;
-          align-items: center;
-          justify-content: flex-end;
-          gap: 6px;
-        }
-        .pct-ring {
-          width: 32px;
-          height: 32px;
-          flex-shrink: 0;
-        }
-        .pct-text {
-          font-size: 11px;
-          color: #444;
-          font-weight: 600;
-          min-width: 28px;
-          text-align: right;
-        }
-        .pct-text.partial { color: #F77F00; }
-        .pct-text.full { color: #FFD60A; }
+        .pct-cell { display: flex; align-items: center; justify-content: flex-end; }
+        .pct-ring { width: 32px; height: 32px; flex-shrink: 0; }
 
-        /* ── LEGEND ── */
-        .legend {
-          display: flex;
-          gap: 16px;
-          margin-top: 20px;
-          justify-content: center;
-          flex-wrap: wrap;
-        }
-        .legend-item {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 11px;
-          color: #444;
-        }
+        .legend { display: flex; gap: 16px; margin-top: 20px; justify-content: center; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #444; }
         .legend-emoji { font-size: 13px; }
 
-        /* mobile tweak */
         @media (max-width: 420px) {
-          .table-header, .day-row {
-            grid-template-columns: 64px 1fr 1fr 1fr 52px;
-            padding: 0 10px;
-          }
+          .table-header, .day-row { grid-template-columns: 64px 1fr 1fr 1fr 52px; padding: 0 10px; }
           .day-num { font-size: 16px; min-width: 36px; }
           .check-box { width: 24px; height: 24px; }
+          .modal { padding: 32px 20px; }
+          .modal-title { font-size: 28px; }
         }
       `}</style>
 
+      {/* Confetti canvas */}
+      <canvas ref={canvasRef} className="confetti-canvas" />
+
+      {/* Completion Modal */}
+      {showModal && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <span className="modal-emoji">🎸</span>
+            <div className="modal-title">YOU'RE AN OFFICIAL GUITAR PLAYER</div>
+            <div className="modal-subtitle">30 Days. Done. No excuses.</div>
+            <p className="modal-body">
+              You just did what most people never do — you showed up <strong>every single day</strong> for 30 days straight. That's not a beginner anymore. That's a guitar player.<br /><br />
+              The calluses, the chord transitions, the strumming patterns — <strong>that's all you</strong>. This is where it gets really fun. Keep going. 🔥
+            </p>
+            <div className="modal-screenshot-hint">
+              📸 Screenshot this & share it in the community!
+            </div>
+            <a
+              className="modal-close"
+              href="https://www.skool.com/notheoryclub"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setShowModal(false)}
+            >
+              Share in Community! 🤩
+            </a>
+          </div>
+        </div>
+      )}
+
       <div className="app">
-        {/* Header */}
         <div className="header">
           <div className="header-top">
             <div>
               <div className="title">
-                  <span className="title-ntc">NO THEORY CLUB</span>
-                  <span className="title-streak">30 DAY STREAK 🔥</span>
-                </div>
+                <span className="title-ntc">NO THEORY CLUB</span>
+                <span className="title-streak">30 DAY STREAK 🔥</span>
+              </div>
               <p className="subtitle">
                 Build a daily guitar habit that transforms your playing.<br />
                 <strong>Practice daily. Even 5 minutes counts. Momentum beats perfection.</strong>
@@ -436,7 +510,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Stats */}
         <div className="stats-row">
           <div className="stat-card">
             <div className="stat-value">{streak}</div>
@@ -452,7 +525,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Progress bar */}
         <div className="progress-wrap">
           <div className="progress-top">
             <span className="progress-label">Overall Progress</span>
@@ -463,7 +535,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Table */}
         <div className="table-wrap">
           <div className="table-header">
             <div className="th">Day</div>
@@ -484,25 +555,17 @@ export default function App() {
             const isActive = done > 0;
             const emoji = isComplete ? "⭐" : isPartial ? "🔥" : null;
             const isCelebrating = celebrating === i;
-
-            // SVG ring
             const r = 12, cx = 16, cy = 16;
             const circumference = 2 * Math.PI * r;
             const offset = circumference - (pct / 100) * circumference;
             const ringColor = isComplete ? "#FFD60A" : isPartial ? "#F77F00" : "#222";
 
             return (
-              <div
-                key={i}
-                className={`day-row${isComplete ? " complete" : ""}${isCelebrating ? " celebrating" : ""}`}
-              >
+              <div key={i} className={`day-row${isComplete ? " complete" : ""}${isCelebrating ? " celebrating" : ""}`}>
                 <div className="day-label">
-                  <span className={`day-num${isActive ? " active" : ""}`}>
-                    DAY {i + 1}
-                  </span>
+                  <span className={`day-num${isActive ? " active" : ""}`}>DAY {i + 1}</span>
                   {emoji && <span className="day-streak-icon">{emoji}</span>}
                 </div>
-
                 {TASKS.map(t => (
                   <div className="check-cell" key={t.id}>
                     <div
@@ -511,22 +574,18 @@ export default function App() {
                       role="checkbox"
                       aria-checked={day[t.id]}
                       tabIndex={0}
-                      onKeyDown={e => e.key === "Enter" || e.key === " " ? toggle(i, t.id) : null}
+                      onKeyDown={e => (e.key === "Enter" || e.key === " ") && toggle(i, t.id)}
                     />
                   </div>
                 ))}
-
                 <div className="pct-cell">
                   <svg className="pct-ring" viewBox="0 0 32 32">
                     <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1c1c1c" strokeWidth="3" />
                     {pct > 0 && (
                       <circle
                         cx={cx} cy={cy} r={r}
-                        fill="none"
-                        stroke={ringColor}
-                        strokeWidth="3"
-                        strokeDasharray={circumference}
-                        strokeDashoffset={offset}
+                        fill="none" stroke={ringColor} strokeWidth="3"
+                        strokeDasharray={circumference} strokeDashoffset={offset}
                         strokeLinecap="round"
                         transform={`rotate(-90 ${cx} ${cy})`}
                         style={{ transition: "stroke-dashoffset 0.4s ease" }}
@@ -539,7 +598,6 @@ export default function App() {
           })}
         </div>
 
-        {/* Legend */}
         <div className="legend">
           <div className="legend-item"><span className="legend-emoji">⭐</span><span>100% day</span></div>
           <div className="legend-item"><span className="legend-emoji">🔥</span><span>Partial day</span></div>
