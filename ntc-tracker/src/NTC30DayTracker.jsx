@@ -373,8 +373,10 @@ export default function App() {
           grid-template-columns: 80px 1fr 1fr 1fr 60px;
           background: #111;
           border-bottom: 1px solid #222;
-          padding: 10px 14px;
+          padding: 12px 14px;
           gap: 8px;
+          min-height: 56px;
+          align-items: center;
         }
         .th {
           font-size: 9px;
@@ -383,14 +385,17 @@ export default function App() {
           color: #444;
           font-weight: 700;
           display: flex;
+          flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 4px;
+          gap: 3px;
+          text-align: center;
+          line-height: 1.3;
         }
-        .th:first-child { justify-content: flex-start; }
-        .th:last-child { justify-content: flex-end; }
-        .th-icon { font-size: 11px; flex-shrink: 0; }
-        .th-text { white-space: nowrap; }
+        .th:first-child { align-items: flex-start; text-align: left; }
+        .th:last-child { align-items: flex-end; text-align: right; }
+        .th-icon { font-size: 13px; flex-shrink: 0; }
+        .th-text { white-space: normal; }
 
         .day-row {
           display: grid;
@@ -425,7 +430,7 @@ export default function App() {
 
         .check-cell { display: flex; justify-content: center; }
         .check-box {
-          width: 26px; height: 26px;
+          width: 30px; height: 30px;
           border: 2px solid #252525;
           border-radius: 6px;
           cursor: pointer;
@@ -457,7 +462,7 @@ export default function App() {
         @media (max-width: 420px) {
           .table-header, .day-row { grid-template-columns: 64px 1fr 1fr 1fr 52px; padding: 0 10px; }
           .day-num { font-size: 16px; min-width: 36px; }
-          .check-box { width: 24px; height: 24px; }
+          .check-box { width: 28px; height: 28px; }
           .modal { padding: 32px 20px; }
           .modal-title { font-size: 28px; }
         }
