@@ -367,6 +367,69 @@ export default function App() {
           transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
+        .community-cta {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          background: #111;
+          border: 1px solid #2a2a2a;
+          border-radius: 14px;
+          padding: 14px 18px;
+          margin-bottom: 20px;
+          text-decoration: none;
+          position: relative;
+          overflow: hidden;
+          transition: border-color 0.2s, transform 0.15s;
+        }
+        .community-cta::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(120deg, rgba(255,214,10,0.06), rgba(247,127,0,0.04));
+          pointer-events: none;
+        }
+        .community-cta::after {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 2px;
+          background: linear-gradient(90deg, #FFD60A, #F77F00);
+        }
+        .community-cta:hover { border-color: #F77F00; transform: translateY(-1px); }
+        .community-cta-left { display: flex; flex-direction: column; gap: 2px; }
+        .community-cta-eyebrow {
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.8px;
+          text-transform: uppercase;
+          background: linear-gradient(90deg, #FFD60A, #F77F00);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          line-height: 1.4;
+        }
+        .community-cta-title {
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 22px;
+          letter-spacing: 0.5px;
+          color: #fff;
+          line-height: 1.1;
+        }
+        .community-cta-sub {
+          font-size: 11px;
+          color: #555;
+          font-weight: 500;
+          margin-top: 1px;
+        }
+        .community-cta-arrow {
+          font-size: 22px;
+          color: #F77F00;
+          font-weight: 700;
+          flex-shrink: 0;
+          transition: transform 0.2s;
+        }
+        .community-cta:hover .community-cta-arrow { transform: translateX(4px); }
+
         .table-wrap { border: 1px solid #1e1e1e; border-radius: 16px; overflow: hidden; }
         .table-header {
           display: grid;
@@ -539,6 +602,20 @@ export default function App() {
             <div className="progress-fill" style={{ width: `${overallPct}%` }} />
           </div>
         </div>
+
+        <a
+          href="https://www.skool.com/notheoryclub/classroom"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="community-cta"
+        >
+          <div className="community-cta-left">
+            <span className="community-cta-eyebrow">Get My Best Drills Inside!</span>
+            <span className="community-cta-title">Join No Theory Club 🎸</span>
+            <span className="community-cta-sub">Lessons · Members · Support</span>
+          </div>
+          <div className="community-cta-arrow">→</div>
+        </a>
 
         <div className="table-wrap">
           <div className="table-header">
